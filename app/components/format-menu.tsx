@@ -1,4 +1,5 @@
 import { Check, ChevronDown } from 'lucide-react';
+import { memo } from 'react';
 
 import { Button } from '~/components/ui/button';
 import {
@@ -21,7 +22,10 @@ const formats = [
   { value: 'JSON', label: 'JSON' },
 ];
 
-export function FormatMenu({ value, onChange }: FormatMenuProps) {
+export const FormatMenu = memo(function FormatMenu({
+  value,
+  onChange,
+}: FormatMenuProps) {
   const selectedFormat = formats.find((f) => f.value === value) || formats[0];
 
   return (
@@ -45,4 +49,4 @@ export function FormatMenu({ value, onChange }: FormatMenuProps) {
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
+});

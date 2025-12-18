@@ -9,6 +9,7 @@ import { Button } from '~/components/ui/button';
 import { Input } from '~/components/ui/input';
 import { Skeleton } from '~/components/ui/skeleton';
 
+import { useHapticFeedback } from '../hooks/use-haptic';
 import { CopyButton } from './copy-button';
 import { FormatMenu } from './format-menu';
 import { ModeToggle } from './mode-toggle';
@@ -62,6 +63,7 @@ export function MediaForm() {
     }
   }, []);
 
+  const { triggerSuccess, triggerError } = useHapticFeedback();
   const [state, formAction, isPending] = useActionState(
     async (_prevState: FormState, formData: FormData): Promise<FormState> => {
       const url = formData.get('url') as string;
@@ -91,9 +93,7 @@ export function MediaForm() {
         const duration = endTime - startTime;
 
         // Haptic Feedback
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate(50);
-        }
+        triggerSuccess();
 
         return {
           result: resultData,
@@ -104,9 +104,7 @@ export function MediaForm() {
         };
       } catch (err) {
         // Haptic Feedback on Error
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate([50, 100, 50]);
-        }
+        triggerError();
         return {
           result: null,
           error: err instanceof Error ? err.message : 'Analysis Failed',

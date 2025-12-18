@@ -21,6 +21,44 @@ export async function loader({ request }: Route.LoaderArgs) {
     } else if (targetUrl.includes('drive.usercontent.google.com')) {
       isGoogleDrive = true;
     }
+
+    // SSRF Protection: Validate URL host
+    try {
+      const parsedUrl = new URL(targetUrl);
+      const host = parsedUrl.hostname;
+
+      // 1. Block Localhost
+      if (
+        host === 'localhost' ||
+        host.startsWith('127.') ||
+        host === '[::1]' ||
+        host === '::1'
+      ) {
+        throw new Error('Invalid URL: Access to local resources is denied.');
+      }
+
+      // 2. Block Private IP Ranges (Basic string checks for safety)
+      if (
+        host.startsWith('10.') ||
+        host.startsWith('192.168.') ||
+        host.startsWith('169.254.') || // Link-local
+        (host.startsWith('172.') &&
+          parseInt(host.split('.')[1], 10) >= 16 &&
+          parseInt(host.split('.')[1], 10) <= 31)
+      ) {
+        throw new Error('Invalid URL: Access to private resources is denied.');
+      }
+
+      // 3. Block Cloud Metadata Services
+      if (host === 'metadata.google.internal' || host === '169.254.169.254') {
+        throw new Error('Invalid URL: Access to metadata services is denied.');
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith('Invalid URL')) {
+        return Response.json({ error: e.message }, { status: 403 });
+      }
+      // If URL parsing fails, let fetch handle it or fail later
+    }
   }
 
   if (!targetUrl) {
@@ -181,26 +219,26 @@ interface MediaInfoTrack {
   '@type': string;
   Format?: string;
   Format_Profile?: string;
-  Format_Info?: string; // e.g. "Advanced Video Codec"
-  FileSize?: string; // 21.5 GiB
-  Duration_String1?: string; // 1 h 23 min
+  Format_Info?: string;
+  FileSize?: string;
+  Duration_String1?: string;
   Duration_String?: string;
   Duration?: string;
   FrameRate?: string;
-  FrameRate_String?: string; // 23.976 FPS or (24000/1001)
+  FrameRate_String?: string;
   BitRate_String?: string;
   BitRate?: string;
   Width?: string;
   Height?: string;
-  DisplayAspectRatio_String?: string; // 2.40:1
+  DisplayAspectRatio_String?: string;
   PixelAspectRatio?: string;
-  Channels_String?: string; // 6 channels
+  Channels_String?: string;
   Channels?: string;
-  SamplingRate_String?: string; // 48.0 kHz
+  SamplingRate_String?: string;
   Title?: string;
-  Language_String?: string; // English
+  Language_String?: string;
   Language?: string;
-  Encoded_Application?: string; // mkvmerge v95.0...
+  Encoded_Application?: string;
   extra?: Record<string, unknown>;
   [key: string]: unknown;
 }
