@@ -1,6 +1,11 @@
 'use client';
 
-import { AlertCircle, ArrowRight, Loader2 } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowRight,
+  Clipboard as ClipboardIcon,
+  Loader2,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useActionState, useEffect, useRef, useState } from 'react';
 import { useFormStatus } from 'react-dom';
@@ -35,6 +40,40 @@ function SubmitButton() {
         <ArrowRight className="h-4 w-4" />
       )}
       <span className="sr-only">Analyze</span>
+    </InputGroupButton>
+  );
+}
+
+function PasteButton({ onPaste }: { onPaste: (text: string) => void }) {
+  const { triggerSuccess, triggerError } = useHapticFeedback();
+  const [isSupported] = useState(
+    typeof navigator !== 'undefined' && !!navigator.clipboard,
+  );
+
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        onPaste(text);
+        triggerSuccess();
+      }
+    } catch (err) {
+      console.error('Failed to read clipboard', err);
+      triggerError();
+      // On Safari, this might happen if permission explicitly denied.
+    }
+  };
+
+  if (!isSupported) return null;
+
+  return (
+    <InputGroupButton
+      type="button"
+      onClick={handlePaste}
+      title="Paste from clipboard"
+    >
+      <ClipboardIcon className="h-4 w-4" />
+      <span className="sr-only">Paste</span>
     </InputGroupButton>
   );
 }
@@ -82,6 +121,7 @@ export function MediaForm() {
     useHapticFeedback();
   const turnstileInputRef = useRef<HTMLInputElement>(null);
   const turnstileWidgetRef = useRef<TurnstileWidgetHandle>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const [isTurnstileVerified, setIsTurnstileVerified] = useState(false);
 
@@ -176,9 +216,8 @@ export function MediaForm() {
     initialState,
   );
 
-  // Clipboard logic
-
-  const { clipboardUrl, ignoreClipboard } = useClipboardSuggestion(state.url);
+  const { clipboardUrl, ignoreClipboard, isPermissionGranted } =
+    useClipboardSuggestion(state.url);
 
   // Reset Turnstile when state changes (meaning submission completed)
   useEffect(() => {
@@ -296,15 +335,25 @@ export function MediaForm() {
               <div className="flex-1">
                 <InputGroup>
                   <InputGroupInput
+                    ref={inputRef}
                     name="url"
                     placeholder="https://example.com/video.mp4"
                     autoComplete="off"
-                    // If we have a clipboard URL that was clicked, we want it here.
-                    // But standard state update is cleaner.
                     key={state.url}
                     defaultValue={state.url || ''}
                     required
                   />
+                  {!isPermissionGranted && (
+                    <PasteButton
+                      onPaste={(text) => {
+                        if (inputRef.current) {
+                          inputRef.current.value = text;
+                          inputRef.current.focus();
+                          // Trigger change event if needed, but for native input simple assignment is visual.
+                        }
+                      }}
+                    />
+                  )}
                   <SubmitButton />
                 </InputGroup>
               </div>

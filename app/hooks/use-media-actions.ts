@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { safeClipboardWrite } from '../lib/clipboard';
 import { uploadToPrivateBin } from '../lib/privatebin';
 import { useHapticFeedback } from './use-haptic';
 
@@ -42,59 +43,84 @@ export function useMediaActions({ data, url }: UseMediaActionsProps) {
     return content;
   };
 
-  const handleCopy = async (format: string, label: string) => {
-    const content = await fetchContent(format, label);
-    if (!content) {
-      if (content === undefined) toast.error(`No ${label} data found.`);
-      return;
-    }
+  const handleCopy = (format: string, label: string) => {
+    const contentPromise = fetchContent(format, label).then((content) => {
+      if (!content) {
+        if (content === undefined) toast.error(`No ${label} data found.`);
+        throw new Error('No content found');
+      }
+      return content;
+    });
 
-    try {
-      await navigator.clipboard.writeText(content);
-      triggerSuccess();
-      toast.success('Copied to clipboard', {
-        description: `${label} format copied successfully.`,
-        duration: 2000,
-      });
-    } catch (err) {
-      console.error('Failed to copy', err);
-      toast.error('Failed to copy', {
-        description: 'Please try again.',
-      });
-    }
+    safeClipboardWrite(
+      contentPromise,
+      () => {
+        triggerSuccess();
+        toast.success('Copied to clipboard', {
+          description: `${label} format copied successfully.`,
+          duration: 2000,
+        });
+      },
+      (err: unknown) => {
+        console.error('Failed to copy', err);
+        // If the error is 'No content found', the toast is already shown right above
+        // or inside fetchContent's catch block
+      },
+    );
   };
 
-  const handleShare = async (format: string, label: string) => {
-    const content = await fetchContent(format, label);
-    if (!content) {
-      if (content === undefined) toast.error(`No ${label} data found.`);
-      return;
-    }
+  const handleShare = (
+    format: string,
+    label: string,
+    onSuccess?: (url: string) => void,
+  ) => {
+    const urlPromise = (async () => {
+      const content = await fetchContent(format, label);
+      if (!content) {
+        if (content === undefined) toast.error(`No ${label} data found.`);
+        throw new Error('No content found');
+      }
 
-    const toastId = toast.loading(`Encrypting & Uploading ${label}...`);
-    setIsSharing(true);
+      const toastId = toast.loading(`Encrypting & Uploading ${label}...`);
+      setIsSharing(true);
 
-    try {
-      const { url: newUrl } = await uploadToPrivateBin(content);
+      try {
+        const { url: newUrl } = await uploadToPrivateBin(content);
+        toast.dismiss(toastId);
+        return newUrl;
+      } catch (err) {
+        console.error('PrivateBin upload failed:', err);
+        toast.error('Upload Failed', {
+          id: toastId,
+          description: 'Could not upload to PrivateBin. Please try again.',
+        });
+        throw err;
+      } finally {
+        setIsSharing(false);
+      }
+    })();
 
-      await navigator.clipboard.writeText(newUrl);
-      window.open(newUrl, '_blank');
-
-      triggerSuccess();
-      toast.success('Link Copied & Opened', {
-        id: toastId,
-        description: `Secure ${label} link copied to clipboard.`,
-        duration: 4000,
-      });
-    } catch (err) {
-      console.error('PrivateBin upload failed:', err);
-      toast.error('Upload Failed', {
-        id: toastId,
-        description: 'Could not upload to PrivateBin. Please try again.',
-      });
-    } finally {
-      setIsSharing(false);
-    }
+    // 1. Trigger Clipboard Write (Sync start with Promise)
+    safeClipboardWrite(
+      urlPromise,
+      () => {
+        triggerSuccess();
+        // The URL is now available. We can call the callback if provided.
+        // But safeClipboardWrite callback doesn't pass the resolved text back to us easily
+        // unless we tap into the promise again.
+        // Actually, we can just attach to urlPromise.
+        urlPromise.then((url) => {
+          if (onSuccess) onSuccess(url);
+          toast.success('Link Copied', {
+            description: `Secure ${label} link copied. Click the button to open.`,
+            duration: 4000,
+          });
+        });
+      },
+      () => {
+        // Errors handled in promise or toast
+      },
+    );
   };
 
   return { handleCopy, handleShare, isSharing };

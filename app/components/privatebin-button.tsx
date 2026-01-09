@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 import { Button } from '~/components/ui/button';
 
+import { safeClipboardWrite } from '../lib/clipboard';
 import { uploadToPrivateBin } from '../lib/privatebin';
 
 interface PrivateBinButtonProps {
@@ -17,28 +18,36 @@ export function PrivateBinButton({ content }: PrivateBinButtonProps) {
   >('idle');
   const [link, setLink] = useState<string | null>(null);
 
-  const handleShare = async () => {
+  const handleShare = () => {
     if (!content) return;
 
-    setStatus('loading');
-    try {
-      const { url } = await uploadToPrivateBin(content);
+    const uploadPromise = (async () => {
+      setStatus('loading');
+      try {
+        const { url } = await uploadToPrivateBin(content);
+        setLink(url);
+        setStatus('success');
+        return url;
+      } catch (err) {
+        console.error('PrivateBin upload failed:', err);
+        setStatus('error');
+        setTimeout(() => setStatus('idle'), 3000);
+        throw err;
+      }
+    })();
 
-      // Copy to clipboard
-      await navigator.clipboard.writeText(url);
-
-      setLink(url);
-      setStatus('success');
-      toast.success('Link Copied', {
-        description: 'The secure link has been copied to your clipboard.',
-      });
-
-      // No timeout reset - keep button for re-copying
-    } catch (err) {
-      console.error('PrivateBin upload failed:', err);
-      setStatus('error');
-      setTimeout(() => setStatus('idle'), 3000);
-    }
+    safeClipboardWrite(
+      uploadPromise,
+      () => {
+        toast.success('Link Copied', {
+          description: 'The secure link has been copied to your clipboard.',
+        });
+      },
+      (err: unknown) => {
+        // Error handling is primarily done within the uploadPromise
+        console.error('Safe clipboard write failed', err);
+      },
+    );
   };
 
   const handleCopyAgain = async () => {

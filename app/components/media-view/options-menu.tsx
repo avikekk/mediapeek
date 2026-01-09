@@ -20,6 +20,7 @@ interface OptionsMenuProps {
   isTextView: boolean;
   setIsTextView: (val: boolean) => void;
   className?: string;
+  onShareSuccess?: (url: string) => void;
 }
 
 // Formats for copy and share actions
@@ -37,6 +38,7 @@ export function OptionsMenu({
   isTextView,
   setIsTextView,
   className,
+  onShareSuccess,
 }: OptionsMenuProps) {
   const { handleCopy, handleShare } = useMediaActions({ data, url });
 
@@ -96,7 +98,7 @@ export function OptionsMenu({
             {formats.map((fmt, i) => (
               <DropdownMenuItem
                 key={`${fmt.id}-${i}`}
-                onClick={() => handleShare(fmt.id, fmt.label)}
+                onClick={() => handleShare(fmt.id, fmt.label, onShareSuccess)}
               >
                 Share {fmt.label}
               </DropdownMenuItem>

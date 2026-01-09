@@ -1,46 +1,81 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export function useClipboardSuggestion(currentUrl: string | undefined) {
   const [clipboardUrl, setClipboardUrl] = useState<string | null>(null);
   const [ignoredUrl, setIgnoredUrl] = useState<string | null>(null);
 
+  const checkClipboard = useCallback(async () => {
+    try {
+      if (typeof document !== 'undefined' && !document.hasFocus()) return;
+
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+
+      const trimmed = text.trim();
+      if (
+        trimmed.startsWith('http') &&
+        trimmed !== currentUrl &&
+        trimmed !== ignoredUrl &&
+        trimmed.length < 2000
+      ) {
+        setClipboardUrl(trimmed);
+      } else {
+        setClipboardUrl(null);
+      }
+    } catch {
+      // Silent catch: Permissions or focus issues are expected in some contexts.
+    }
+  }, [currentUrl, ignoredUrl]);
+
+  /*
+   * State to track if the browser has granted persistent permission (Chrome).
+   * If true, we hide the manual 'Paste' button in the UI.
+   */
+  const [isPermissionGranted, setIsPermissionGranted] = useState(false);
+
+  // Auto-check on focus for browsers that support strict permission queries (e.g. Chrome).
   useEffect(() => {
-    const checkClipboard = async () => {
+    const attemptAutoRead = async () => {
       try {
-        // Purity Check: Reading from an external source (clipboard) is a side effect, so it belongs in useEffect.
-        // We also check for focus to avoid browser security errors/warnings.
-        if (typeof document !== 'undefined' && !document.hasFocus()) return;
-
-        const text = await navigator.clipboard.readText();
-        if (!text) return;
-
-        const trimmed = text.trim();
         if (
-          trimmed.startsWith('http') &&
-          trimmed !== currentUrl && // Don't suggest what is already in the input
-          trimmed !== ignoredUrl && // Don't suggest what the user explicitly ignored
-          trimmed.length < 2000
+          typeof navigator !== 'undefined' &&
+          navigator.permissions &&
+          navigator.permissions.query
         ) {
-          setClipboardUrl(trimmed);
-        } else {
-          setClipboardUrl(null);
+          const result = await navigator.permissions.query({
+            name: 'clipboard-read' as PermissionName,
+          });
+
+          if (result.state === 'granted') {
+            setIsPermissionGranted(true);
+            checkClipboard();
+          } else if (result.state === 'prompt') {
+            // Initially false, but we try to read. If user allows, next check might be granted.
+            setIsPermissionGranted(false);
+            checkClipboard();
+          }
+
+          // Listen for change (e.g. user revoked/granted elsewhere)
+          result.onchange = () => {
+            setIsPermissionGranted(result.state === 'granted');
+          };
         }
       } catch {
-        // Silent catch: Permissions or focus issues are expected in some contexts.
+        // Ignored
       }
     };
 
     if (typeof window !== 'undefined') {
-      checkClipboard();
-      window.addEventListener('focus', checkClipboard);
+      attemptAutoRead();
+      window.addEventListener('focus', attemptAutoRead);
     }
 
     return () => {
       if (typeof window !== 'undefined') {
-        window.removeEventListener('focus', checkClipboard);
+        window.removeEventListener('focus', attemptAutoRead);
       }
     };
-  }, [currentUrl, ignoredUrl]);
+  }, [checkClipboard]);
 
   const ignoreClipboard = () => {
     if (clipboardUrl) {
@@ -55,7 +90,9 @@ export function useClipboardSuggestion(currentUrl: string | undefined) {
 
   return {
     clipboardUrl,
+    checkClipboard,
     ignoreClipboard,
     clearClipboard,
+    isPermissionGranted,
   };
 }
