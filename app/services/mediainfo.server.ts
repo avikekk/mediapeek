@@ -1,8 +1,22 @@
-import { log } from '~/lib/logger.server';
 import MediaInfoFactory from '~/lib/mediaInfoFactory';
 
 export interface MediaInfoResult {
   [key: string]: string;
+}
+
+export interface MediaInfoDiagnostics {
+  wasmLoadTimeMs: number;
+  factoryCreateTimeMs: number;
+  formatGenerationTimes: Record<string, number>;
+  totalAnalysisTimeMs: number;
+  wasmLoadError?: string;
+  objectProcessError?: string;
+  formatErrors: Record<string, string>;
+}
+
+export interface MediaInfoAnalysis {
+  results: Record<string, string>;
+  diagnostics: MediaInfoDiagnostics;
 }
 
 export type MediaInfoFormat = 'object' | 'Text' | 'XML' | 'HTML';
@@ -12,9 +26,16 @@ export async function analyzeMediaBuffer(
   fileSize: number,
   filename: string,
   requestedFormats: string[] = [],
-): Promise<MediaInfoResult> {
+): Promise<MediaInfoAnalysis> {
   const tStart = performance.now();
-  log(`Starting analysis for ${filename} (${fileSize} bytes)`);
+
+  const diagnostics: MediaInfoDiagnostics = {
+    wasmLoadTimeMs: 0,
+    factoryCreateTimeMs: 0,
+    formatGenerationTimes: {},
+    totalAnalysisTimeMs: 0,
+    formatErrors: {},
+  };
 
   const readChunk = async (size: number, offset: number) => {
     if (offset >= fileBuffer.byteLength) {
@@ -62,9 +83,10 @@ export async function analyzeMediaBuffer(
       const imported = await import('../wasm/MediaInfoModule.wasm');
       wasmModule = imported.default;
     } catch (err) {
-      log('Failed to load WASM module dynamically:', 'warn', err);
+      diagnostics.wasmLoadError =
+        err instanceof Error ? err.message : String(err);
     }
-    log(`WASM module loaded in ${Math.round(performance.now() - tWasm)}ms`);
+    diagnostics.wasmLoadTimeMs = Math.round(performance.now() - tWasm);
 
     const tFactory = performance.now();
     infoInstance = await MediaInfoFactory({
@@ -78,14 +100,11 @@ export async function analyzeMediaBuffer(
       wasmModule,
       locateFile: () => 'ignored',
     });
-    log(
-      `MediaInfo instance created in ${Math.round(performance.now() - tFactory)}ms`,
-    );
+    diagnostics.factoryCreateTimeMs = Math.round(performance.now() - tFactory);
 
     for (const { type, key } of formatsToGenerate) {
       const tFormat = performance.now();
       try {
-        log(`Generating format: ${type}...`);
         // Use 'text' (lowercase) for Text view to match MediaInfo expectation
         const formatStr = type === 'Text' ? 'text' : type;
 
@@ -129,7 +148,8 @@ export async function analyzeMediaBuffer(
             }
             results[key] = JSON.stringify(json, null, 2);
           } catch (e) {
-            log('Failed to process object result:', 'warn', e);
+            diagnostics.objectProcessError =
+              e instanceof Error ? e.message : String(e);
             results[key] = '{}';
           }
         } else if (type === 'Text') {
@@ -161,25 +181,22 @@ export async function analyzeMediaBuffer(
         } else {
           results[key] = resultStr;
         }
-        log(
-          `Generated ${type} in ${Math.round(performance.now() - tFormat)}ms`,
+
+        diagnostics.formatGenerationTimes[key] = Math.round(
+          performance.now() - tFormat,
         );
       } catch (err) {
-        log(`Failed to generate ${type}:`, 'error', err);
+        diagnostics.formatErrors[key] =
+          err instanceof Error ? err.message : String(err);
         results[key] = `Error generating ${type} view.`;
       }
     }
-  } catch (error) {
-    log('MediaInfo Analysis execution failed:', 'error', error);
-    throw error;
   } finally {
     if (infoInstance) {
       infoInstance.close();
     }
   }
 
-  log(
-    `Total analysis completed in ${Math.round(performance.now() - tStart)}ms`,
-  );
-  return results;
+  diagnostics.totalAnalysisTimeMs = Math.round(performance.now() - tStart);
+  return { results, diagnostics };
 }

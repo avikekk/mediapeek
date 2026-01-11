@@ -1,3 +1,4 @@
+import { log } from '~/lib/logger.server';
 import { analyzeSchema } from '~/lib/schemas';
 import { fetchMediaChunk } from '~/services/media-fetch.server';
 import { analyzeMediaBuffer } from '~/services/mediainfo.server';
@@ -5,91 +6,150 @@ import { analyzeMediaBuffer } from '~/services/mediainfo.server';
 import type { Route } from './+types/resource.analyze';
 
 export async function loader({ request, context }: Route.LoaderArgs) {
+  const startTime = performance.now();
   const url = new URL(request.url);
-  const validationResult = analyzeSchema.safeParse(
-    Object.fromEntries(url.searchParams),
-  );
 
-  // --- Turnstile Validation ---
-  const turnstileToken = request.headers.get('CF-Turnstile-Response');
-  const secretKey = import.meta.env.DEV
-    ? '1x00000000000000000000AA'
-    : context.cloudflare.env.TURNSTILE_SECRET_KEY;
+  // Initialize Wide Event Context
+  // We use UPPER_SNAKE_CASE for status enums in context as per Google Style Guide recommendation for constants
+  const logCtx: Record<string, unknown> = {
+    params: Object.fromEntries(url.searchParams),
+  };
 
-  if (
-    (context.cloudflare.env.ENABLE_TURNSTILE as string) === 'true' &&
-    secretKey
-  ) {
-    if (!turnstileToken) {
-      return Response.json(
-        { error: 'Missing security token. Complete the verification.' },
-        { status: 403 },
-      );
-    }
+  let status = 200;
+  let severity: 'INFO' | 'WARNING' | 'ERROR' = 'INFO';
 
-    // Bypass verification for localhost mock token
-    if (turnstileToken === 'localhost-mock-token' || import.meta.env.DEV) {
-      // Allow immediately
-    } else {
-      const formData = new FormData();
-      formData.append('secret', secretKey);
-      formData.append('response', turnstileToken);
-      formData.append(
-        'remoteip',
-        request.headers.get('CF-Connecting-IP') || '',
-      );
+  try {
+    const validationResult = analyzeSchema.safeParse(
+      Object.fromEntries(url.searchParams),
+    );
 
-      const result = await fetch(
-        'https://challenges.cloudflare.com/turnstile/v0/siteverify',
-        {
-          method: 'POST',
-          body: formData,
-        },
-      );
+    // --- Turnstile Validation ---
+    const turnstileToken = request.headers.get('CF-Turnstile-Response');
+    const secretKey = import.meta.env.DEV
+      ? '1x00000000000000000000AA'
+      : context.cloudflare.env.TURNSTILE_SECRET_KEY;
 
-      const outcome = (await result.json()) as { success: boolean };
-      if (!outcome.success) {
+    if (
+      (context.cloudflare.env.ENABLE_TURNSTILE as string) === 'true' &&
+      secretKey
+    ) {
+      if (!turnstileToken) {
+        status = 403;
+        severity = 'WARNING';
+        logCtx.turnstile = { result: 'MISSING_TOKEN' };
         return Response.json(
-          { error: 'Security check failed. Refresh and try again.' },
+          { error: 'Missing security token. Complete the verification.' },
           { status: 403 },
         );
       }
+
+      // Bypass verification for localhost mock token
+      if (turnstileToken === 'localhost-mock-token' || import.meta.env.DEV) {
+        logCtx.turnstile = { result: 'BYPASS_DEV' };
+      } else {
+        const formData = new FormData();
+        formData.append('secret', secretKey);
+        formData.append('response', turnstileToken);
+        formData.append(
+          'remoteip',
+          request.headers.get('CF-Connecting-IP') || '',
+        );
+
+        const result = await fetch(
+          'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+          {
+            method: 'POST',
+            body: formData,
+          },
+        );
+
+        const outcome = (await result.json()) as { success: boolean };
+        if (!outcome.success) {
+          status = 403;
+          severity = 'WARNING';
+          logCtx.turnstile = { result: 'FAILED', outcome };
+          return Response.json(
+            { error: 'Security check failed. Refresh and try again.' },
+            { status: 403 },
+          );
+        }
+        logCtx.turnstile = { result: 'SUCCESS' };
+      }
     }
-  }
-  // ----------------------------
+    // ----------------------------
 
-  if (!validationResult.success) {
-    const { fieldErrors } = validationResult.error.flatten();
-    const serverError =
-      fieldErrors.url?.[0] || fieldErrors.format?.[0] || 'Invalid input.';
-    return Response.json({ error: serverError }, { status: 400 });
-  }
+    if (!validationResult.success) {
+      const { fieldErrors } = validationResult.error.flatten();
+      const serverError =
+        fieldErrors.url?.[0] || fieldErrors.format?.[0] || 'Invalid input.';
 
-  const { url: initialUrl, format: requestedFormats } = validationResult.data;
+      status = 400;
+      severity = 'WARNING';
+      logCtx.validationError = fieldErrors;
 
-  try {
+      return Response.json({ error: serverError }, { status: 400 });
+    }
+
+    const { url: initialUrl, format: requestedFormats } = validationResult.data;
+    logCtx.targetUrl = initialUrl;
+    logCtx.requestedFormats = requestedFormats;
+
     // 1. Fetch Media Chunk (includes validation, resolution, streaming)
-    const { buffer, fileSize, filename } = await fetchMediaChunk(initialUrl);
-
-    // 2. Analyze
-    const results = await analyzeMediaBuffer(
+    const {
       buffer,
       fileSize,
       filename,
-      requestedFormats,
-    );
+      diagnostics: fetchDiagnostics,
+    } = await fetchMediaChunk(initialUrl);
+
+    // Spread fetch diagnostics into context under a namespace
+    logCtx.fetch = fetchDiagnostics;
+    logCtx.fileSize = fileSize;
+    logCtx.filename = filename;
+
+    // 2. Analyze
+    const { results, diagnostics: analysisDiagnostics } =
+      await analyzeMediaBuffer(buffer, fileSize, filename, requestedFormats);
+
+    // Spread analysis diagnostics
+    logCtx.analysis = analysisDiagnostics;
 
     return Response.json({ results });
   } catch (error) {
-    console.error('Server-side Analysis Error:', error);
-    return Response.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'An unexpected error occurred.',
+    status = 500;
+    severity = 'ERROR';
+
+    const errorMessage =
+      error instanceof Error ? error.message : 'An unexpected error occurred.';
+
+    // Google Style Guide Error Object Structure
+    const errorObj = {
+      code: 500,
+      message: errorMessage,
+      details: error instanceof Error ? error.stack : String(error),
+    };
+
+    // We attach the error to the log event context
+    logCtx.error = errorObj;
+
+    return Response.json({ error: errorMessage }, { status: 500 });
+  } finally {
+    // EMIT WIDE EVENT
+    const requestId = request.headers.get('cf-ray') || crypto.randomUUID();
+
+    log({
+      severity,
+      message: 'Media Analysis Request',
+      requestId,
+      httpRequest: {
+        requestMethod: request.method,
+        requestUrl: url.pathname,
+        status,
+        remoteIp: request.headers.get('CF-Connecting-IP') || undefined,
+        userAgent: request.headers.get('User-Agent') || undefined,
+        latency: `${(performance.now() - startTime) / 1000}s`,
       },
-      { status: 500 },
-    );
+      context: logCtx,
+    });
   }
 }
