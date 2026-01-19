@@ -17,7 +17,7 @@ export interface FetchDiagnostics {
 export interface MediaFetchResult {
   buffer: Uint8Array;
   filename: string;
-  fileSize: number;
+  fileSize?: number;
   diagnostics: FetchDiagnostics;
 }
 
@@ -65,7 +65,7 @@ export async function fetchMediaChunk(
       );
     }
 
-    // If we have a 405, it might be that the server returned an HTML error page for HEAD,
+    // If we have a 405, it might be theserver returned an HTML error page for HEAD,
     // but code above should have handled the fallback. If we are here, even the fallback/original returned HTML.
     throw new Error(
       'URL links to a webpage, not a media file. Provide a direct link.',
@@ -85,7 +85,7 @@ export async function fetchMediaChunk(
   }
 
   // Determine file size (support Content-Range for partial content responses)
-  let fileSize = 0;
+  let fileSize: number | undefined;
   const contentRange = headRes.headers.get('content-range');
   if (contentRange) {
     const match = contentRange.match(/\/(\d+)$/);
@@ -96,10 +96,13 @@ export async function fetchMediaChunk(
 
   // Fallback to Content-Length if no Content-Range
   if (!fileSize) {
-    fileSize = parseInt(headRes.headers.get('content-length') || '0', 10);
+    const cl = headRes.headers.get('content-length');
+    if (cl) {
+      fileSize = parseInt(cl, 10);
+    }
   }
 
-  if (!fileSize) throw new Error('Could not determine file size');
+  // We no longer throw if fileSize is unknown. We proceed with best effort.
 
   // 2. Determine Filename
   let filename = targetUrl;
@@ -122,7 +125,11 @@ export async function fetchMediaChunk(
   diagnostics.resolvedFilename = filename;
 
   // 3. Fetch Content Chunk
-  const fetchEnd = Math.min(chunkSize - 1, fileSize - 1);
+  // If fileSize is known, use it to clamp range. If not, just request up to chunkSize.
+  const fetchEnd =
+    fileSize !== undefined
+      ? Math.min(chunkSize - 1, fileSize - 1)
+      : chunkSize - 1;
 
   const tFetch = performance.now();
   const response = await fetch(targetUrl, {

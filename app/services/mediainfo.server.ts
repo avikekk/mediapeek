@@ -23,11 +23,13 @@ export type MediaInfoFormat = 'object' | 'Text' | 'XML' | 'HTML';
 
 export async function analyzeMediaBuffer(
   fileBuffer: Uint8Array,
-  fileSize: number,
+  fileSize: number | undefined,
   filename: string,
   requestedFormats: string[] = [],
 ): Promise<MediaInfoAnalysis> {
   const tStart = performance.now();
+
+  const effectiveFileSize = fileSize ?? fileBuffer.byteLength;
 
   const diagnostics: MediaInfoDiagnostics = {
     wasmLoadTimeMs: 0,
@@ -119,7 +121,7 @@ export async function analyzeMediaBuffer(
         // For 'object' format, analyzeData returns the result directly.
         // For others, we need to call inform().
         const resultData = await infoInstance.analyzeData(
-          () => fileSize,
+          () => effectiveFileSize,
           readChunk,
         );
         let resultStr = '';
