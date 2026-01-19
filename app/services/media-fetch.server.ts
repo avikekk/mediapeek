@@ -1,4 +1,5 @@
 import {
+  extractFilenameFromUrl,
   getEmulationHeaders,
   resolveGoogleDriveUrl,
   validateUrl,
@@ -105,7 +106,7 @@ export async function fetchMediaChunk(
   // We no longer throw if fileSize is unknown. We proceed with best effort.
 
   // 2. Determine Filename
-  let filename = targetUrl;
+  let filename = extractFilenameFromUrl(targetUrl);
   const contentDisposition = headRes.headers.get('content-disposition');
   if (contentDisposition) {
     const starMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);

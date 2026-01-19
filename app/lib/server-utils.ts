@@ -69,3 +69,21 @@ export const getEmulationHeaders = (range?: string) => {
   );
   return headers;
 };
+
+export const extractFilenameFromUrl = (url: string): string => {
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    const segments = pathname.split('/');
+    // Handle trailing slashes by filtering empty segments
+    const cleanSegments = segments.filter(Boolean);
+    const lastSegment = cleanSegments.pop();
+
+    if (lastSegment) {
+      return decodeURIComponent(lastSegment);
+    }
+  } catch {
+    // Fallback if parsing fails
+  }
+  return url;
+};
