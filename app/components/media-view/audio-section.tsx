@@ -1,8 +1,10 @@
+import { memo } from 'react';
+
 import type { MediaTrackJSON } from '~/types/media';
 
 import { AudioTrackRow } from './audio-track-row';
 
-export function AudioSection({
+export const AudioSection = memo(function AudioSection({
   audioTracks,
   showOriginalTitles,
 }: {
@@ -29,4 +31,4 @@ export function AudioSection({
       </div>
     </section>
   );
-}
+});

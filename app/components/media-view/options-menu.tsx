@@ -48,7 +48,6 @@ interface OptionsMenuProps {
   onShareSuccess?: (url: string) => void;
 }
 
-// Formats for copy and share actions
 const formats = [
   { id: 'json', label: 'Object' },
   { id: 'json', label: 'JSON' },
@@ -72,7 +71,6 @@ export function OptionsMenu({
   const isDesktop = useMediaQuery('(min-width: 768px)');
   const [open, setOpen] = React.useState(false);
 
-  // Share Dialog State
   const [shareDialogOpen, setShareDialogOpen] = React.useState(false);
   const [shareData, setShareData] = React.useState<{
     url: string;

@@ -1,9 +1,11 @@
+import { memo } from 'react';
+
 import { getAccessibilityFeatures } from '~/lib/media-utils';
 import type { MediaTrackJSON } from '~/types/media';
 
 import { MediaIcon } from './media-icon';
 
-export function AccessibilitySection({
+export const AccessibilitySection = memo(function AccessibilitySection({
   generalTrack,
   audioTracks,
   textTracks,
@@ -21,7 +23,7 @@ export function AccessibilitySection({
   if (!hasSDH && !hasCC && !hasAD) return null;
 
   return (
-    <div className="border-border/40 mt-8 space-y-6 border-t pt-8">
+    <div className="mt-8 space-y-6">
       <h3 className="text-sm font-semibold tracking-wider uppercase">
         Accessibility
       </h3>
@@ -85,4 +87,4 @@ export function AccessibilitySection({
       </div>
     </div>
   );
-}
+});

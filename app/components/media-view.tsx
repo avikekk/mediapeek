@@ -116,6 +116,26 @@ export function MediaView({ data, url }: MediaViewProps) {
     };
   }, [data, lazyText, isFetchingText]);
 
+  const { General, VideoTracks, AudioTracks, TextTracks, MenuTrack } =
+    useMemo(() => {
+      if (!parsedData) {
+        return {
+          General: undefined,
+          VideoTracks: [],
+          AudioTracks: [],
+          TextTracks: [],
+          MenuTrack: undefined,
+        };
+      }
+      return {
+        General: parsedData.find((t) => t['@type'] === 'General'),
+        VideoTracks: parsedData.filter((t) => t['@type'] === 'Video'),
+        AudioTracks: parsedData.filter((t) => t['@type'] === 'Audio'),
+        TextTracks: parsedData.filter((t) => t['@type'] === 'Text'),
+        MenuTrack: parsedData.find((t) => t['@type'] === 'Menu'),
+      };
+    }, [parsedData]);
+
   if (!parsedData) {
     return (
       <div className="text-destructive rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-900/20">
@@ -127,12 +147,6 @@ export function MediaView({ data, url }: MediaViewProps) {
       </div>
     );
   }
-
-  const General = parsedData.find((t) => t['@type'] === 'General');
-  const VideoTracks = parsedData.filter((t) => t['@type'] === 'Video');
-  const AudioTracks = parsedData.filter((t) => t['@type'] === 'Audio');
-  const TextTracks = parsedData.filter((t) => t['@type'] === 'Text');
-  const MenuTrack = parsedData.find((t) => t['@type'] === 'Menu');
 
   return (
     <div

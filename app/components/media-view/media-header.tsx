@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 
 import { OptionsMenu } from '~/components/media-view/options-menu';
 import { Separator } from '~/components/ui/separator';
@@ -20,7 +20,7 @@ interface MediaHeaderProps {
   url: string;
 }
 
-export function MediaHeader({
+export const MediaHeader = memo(function MediaHeader({
   generalTrack,
   videoTracks,
   audioTracks,
@@ -106,4 +106,4 @@ export function MediaHeader({
       <Separator />
     </div>
   );
-}
+});

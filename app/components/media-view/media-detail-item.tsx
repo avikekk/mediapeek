@@ -4,7 +4,7 @@ import { cn } from '~/lib/utils';
 
 interface MediaDetailItemProps {
   label: string;
-  value?: string | number | null;
+  value?: ReactNode;
   subtext?: string | null;
   className?: string;
   children?: ReactNode;
@@ -26,14 +26,16 @@ export function MediaDetailItem({
         className,
       )}
     >
-      <span className="text-muted-foreground mb-1 block text-xs tracking-wider uppercase">
+      <span className="text-muted-foreground/70 mb-1 block text-[10px] tracking-wider uppercase">
         {label}
       </span>
       {children ? (
         children
       ) : (
         <div className="flex flex-col">
-          <span className="text-foreground/85 font-semibold">{value}</span>
+          <span className="text-foreground/85 text-sm font-medium break-all">
+            {value}
+          </span>
           {subtext && (
             <span className="text-muted-foreground text-xs font-normal">
               {subtext}

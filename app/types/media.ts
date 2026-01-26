@@ -524,7 +524,8 @@ export interface MediaTrackJSON {
   Chapters_Pos_End?: string;
 
   // Extra (for Chapters usually)
-  extra?: Record<string, string>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  extra?: Record<string, any>;
 
   // Allow any other field from MediaInfo (dynamic nature)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

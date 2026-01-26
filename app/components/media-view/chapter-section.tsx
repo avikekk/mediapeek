@@ -1,7 +1,13 @@
+import { memo } from 'react';
+
 import { parseChapters } from '~/lib/media-utils';
 import type { MediaTrackJSON } from '~/types/media';
 
-export function ChapterSection({ menuTrack }: { menuTrack?: MediaTrackJSON }) {
+export const ChapterSection = memo(function ChapterSection({
+  menuTrack,
+}: {
+  menuTrack?: MediaTrackJSON;
+}) {
   const chapters = parseChapters(menuTrack);
 
   if (chapters.length === 0) return null;
@@ -21,7 +27,7 @@ export function ChapterSection({ menuTrack }: { menuTrack?: MediaTrackJSON }) {
               <span className="text-muted-foreground w-24 shrink-0 font-mono">
                 {time.split('.')[0]}
               </span>
-              <span className="text-foreground/85 truncate font-medium">
+              <span className="text-foreground/85 truncate font-medium break-all">
                 {
                   String(name).replace(
                     /^[a-z]{2}:/,
@@ -35,4 +41,4 @@ export function ChapterSection({ menuTrack }: { menuTrack?: MediaTrackJSON }) {
       </div>
     </section>
   );
-}
+});

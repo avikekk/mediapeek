@@ -9,7 +9,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const startTime = performance.now();
   const url = new URL(request.url);
 
-  // 1. Identity: Generate Request ID immediately for correlation
+  // Generate Request ID immediately for correlation
   const requestId = request.headers.get('cf-ray') || crypto.randomUUID();
 
   // Initialize Wide Event Context
@@ -26,7 +26,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       Object.fromEntries(url.searchParams),
     );
 
-    // --- Turnstile Validation ---
+    // Turnstile Validation
     const turnstileToken = request.headers.get('CF-Turnstile-Response');
     const secretKey = import.meta.env.DEV
       ? '1x00000000000000000000AA'
@@ -86,7 +86,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         logCtx.turnstile = { result: 'SUCCESS' };
       }
     }
-    // ----------------------------
 
     if (!validationResult.success) {
       const { fieldErrors } = validationResult.error.flatten();
@@ -106,7 +105,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     logCtx.targetUrl = initialUrl;
     logCtx.requestedFormats = requestedFormats;
 
-    // 1. Fetch Media Chunk (includes validation, resolution, streaming)
+    // Fetch Media Chunk (includes validation, resolution, streaming)
     const {
       buffer,
       fileSize,
@@ -119,7 +118,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     logCtx.fileSize = fileSize;
     logCtx.filename = filename;
 
-    // 2. Analyze
+    // Analyze
     const { results, diagnostics: analysisDiagnostics } =
       await analyzeMediaBuffer(buffer, fileSize, filename, requestedFormats);
 
@@ -134,7 +133,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     const errorMessage =
       error instanceof Error ? error.message : 'An unexpected error occurred.';
 
-    // Error Object Structure
     const errorObj = {
       code: 500,
       message: errorMessage,

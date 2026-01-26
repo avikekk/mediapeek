@@ -1,8 +1,10 @@
+import { memo } from 'react';
+
 import type { MediaTrackJSON } from '~/types/media';
 
 import { SubtitleTrackRow } from './subtitle-track-row';
 
-export function SubtitleSection({
+export const SubtitleSection = memo(function SubtitleSection({
   textTracks,
   showOriginalTitles,
 }: {
@@ -27,4 +29,4 @@ export function SubtitleSection({
       </div>
     </section>
   );
-}
+});

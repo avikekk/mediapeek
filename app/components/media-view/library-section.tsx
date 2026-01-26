@@ -1,3 +1,5 @@
+import { memo } from 'react';
+
 import { getMediaBadges } from '~/lib/media-utils';
 import type { MediaTrackJSON } from '~/types/media';
 
@@ -15,7 +17,7 @@ interface LibrarySectionProps {
   textTracks: MediaTrackJSON[];
 }
 
-export function LibrarySection({
+export const LibrarySection = memo(function LibrarySection({
   library,
   generalTrack,
   videoTracks,
@@ -32,7 +34,7 @@ export function LibrarySection({
   if (!library) return null;
 
   return (
-    <div className="border-border/40 mt-8 space-y-6 border-t pt-8">
+    <div className="mt-8 space-y-6">
       <h3 className="text-sm font-semibold tracking-wider uppercase">
         Metadata Engine
       </h3>
@@ -151,4 +153,4 @@ export function LibrarySection({
       <TrademarkNotice badges={badges} />
     </div>
   );
-}
+});
