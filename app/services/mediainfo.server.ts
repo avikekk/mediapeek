@@ -1,5 +1,7 @@
+import { DiagnosticsError } from '~/lib/error-utils';
 import {
   extractFirstFileFromArchive,
+  isArchiveExtension,
   isValidFilename,
   normalizeMediaInfo,
 } from '~/lib/media-utils';
@@ -72,8 +74,12 @@ export async function analyzeMediaBuffer(
   };
 
   // Attempt to detect inner file from archive (Container Peeking)
-  // This detects "inner name" for Stored Zip / Tar where we didn't unzip on the fly.
-  const archiveInnerName = extractFirstFileFromArchive(fileBuffer);
+  // OPTIMIZATION: Only scan for inner files if the filename extension suggests an archive.
+  // This prevents wasting CPU scanning every MKV/MP4 file for zip headers.
+  let archiveInnerName: string | null = null;
+  if (isArchiveExtension(filename)) {
+    archiveInnerName = extractFirstFileFromArchive(fileBuffer);
+  }
 
   // Prefer the archive inner name if detected (Prong B)
   // Otherwise, use the filename passed to us (Prong A might have set this to the inner name already, or it's just the URL filename)
@@ -238,6 +244,9 @@ export async function analyzeMediaBuffer(
     // Catch factory errors or other failures not caught in loop
     diagnostics.wasmLoadError =
       err instanceof Error ? err.message : String(err);
+
+    // Propagate up with partial diagnostics
+    throw new DiagnosticsError(diagnostics.wasmLoadError, diagnostics, err);
   }
 
   diagnostics.totalAnalysisTimeMs = Math.round(performance.now() - tStart);

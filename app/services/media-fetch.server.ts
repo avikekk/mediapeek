@@ -1,9 +1,11 @@
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 
+import { DiagnosticsError } from '~/lib/error-utils';
 import {
   extractFilenameFromUrl,
   getEmulationHeaders,
+  isArchiveExtension,
   resolveGoogleDriveUrl,
   validateUrl,
 } from '~/lib/server-utils';
@@ -157,20 +159,45 @@ export async function fetchMediaChunk(
   if (!reader) throw new Error('Failed to retrieve response body stream');
 
   // Check for Zip Header to transparently decompress Deflate streams
-  // We need to read the first chunk primarily to check for the Zip signature.
+  // OPTIMIZATION: Only check for zip header if the filename looks like an archive (or if we have no filename).
+  // This prevents checking every video file for zip magic if we already know it's .mp4.
+  // We allow null filename to proceed to check (safety net).
   let firstChunk: Uint8Array | null = null;
   {
-    const { done, value } = await reader.read();
-    if (!done) {
-      firstChunk = value;
+    // Add a race timeout to the first read to prevent hangs
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => {
+        reject(new Error('Fetch stream read timed out'));
+      }, 5000),
+    );
+
+    try {
+      const { done, value } = await Promise.race([
+        reader.read(),
+        timeoutPromise,
+      ]);
+      if (!done) {
+        firstChunk = value;
+      }
+    } catch (err) {
+      if (
+        err instanceof Error &&
+        err.message === 'Fetch stream read timed out'
+      ) {
+        void reader.cancel();
+      }
+      throw err;
     }
   }
 
   let finalReader = reader;
   let isZipCompressed = false;
 
-  // Verify Zip Signature using Buffer
-  if (firstChunk && firstChunk.byteLength > 30) {
+  // Verify Zip Signature using Buffer - Only if potentially an archive
+  const shouldCheckArchive =
+    !filename || isArchiveExtension(filename) || isGoogleDrive;
+
+  if (shouldCheckArchive && firstChunk && firstChunk.byteLength > 30) {
     const buffer = Buffer.from(firstChunk); // View as Buffer for easier parsing
     // Check for ZIP Local File Header Signature: 0x04034b50 (LE)
     if (buffer.readUInt32LE(0) === 0x04034b50) {
@@ -274,6 +301,8 @@ export async function fetchMediaChunk(
     const errorMessage = err instanceof Error ? err.message : String(err);
 
     diagnostics.streamCloseError = errorMessage;
+    // IMPORTANT: Capture total duration even on error
+    diagnostics.totalDurationMs = Math.round(performance.now() - tStart);
 
     // DecompressionStream throws if the stream ends while expecting more data (valid for partial fetches)
     if (
@@ -284,8 +313,12 @@ export async function fetchMediaChunk(
       // We got some data before the stream ended/failed, which is expected for partial zip chunks.
       // Sallow the error and return what we have.
     } else {
-      // Stream failed really, propagate error to be caught by main handler
-      throw new Error(`Stream reading failed: ${errorMessage}`);
+      // Stream failed really, propagate error with diagnostics attached
+      throw new DiagnosticsError(
+        `Stream reading failed: ${errorMessage}`,
+        diagnostics,
+        err,
+      );
     }
   }
 

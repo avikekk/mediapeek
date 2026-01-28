@@ -597,3 +597,11 @@ function extractFirstFileFromTar(buffer: Uint8Array): string | null {
   }
   return null;
 }
+
+/**
+ * Checks if the filename has an archive extension.
+ */
+export const isArchiveExtension = (filename: string): boolean => {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  return ['zip', 'tar', 'rar', '7z', 'gz', 'bz2', 'xz'].includes(ext);
+};

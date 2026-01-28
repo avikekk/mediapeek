@@ -3,8 +3,14 @@ import { log, type LogContext, requestStorage } from '~/lib/logger.server';
 import { analyzeSchema } from '~/lib/schemas';
 import { TurnstileResponseSchema } from '~/lib/schemas/turnstile';
 import { mediaPeekEmitter } from '~/services/event-bus.server';
-import { fetchMediaChunk } from '~/services/media-fetch.server';
-import { analyzeMediaBuffer } from '~/services/mediainfo.server';
+import {
+  type FetchDiagnostics,
+  fetchMediaChunk,
+} from '~/services/media-fetch.server';
+import {
+  analyzeMediaBuffer,
+  type MediaInfoDiagnostics,
+} from '~/services/mediainfo.server';
 // Initialize Telemetry Service (Singleton) - Ensures listeners are active
 import { initTelemetry } from '~/services/telemetry.server';
 
@@ -151,12 +157,18 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
       // Fetch Media Chunk (includes validation, resolution, streaming)
       // fetchMediaChunk now emits 'fetch:complete' internally!
-      const { buffer, fileSize, filename } = await fetchMediaChunk(initialUrl);
+      const {
+        buffer,
+        fileSize,
+        filename,
+        diagnostics: fetchDiagnostics,
+      } = await fetchMediaChunk(initialUrl);
 
       // Update Logger Context with File Info
       if (initialContext.customContext) {
         initialContext.customContext.filename = filename;
         initialContext.customContext.fileSize = fileSize;
+        initialContext.customContext.fetch = fetchDiagnostics;
       }
 
       // Analyze
@@ -214,6 +226,36 @@ export async function loader({ request, context }: Route.LoaderArgs) {
         message: errorMessage,
         details: error instanceof Error ? error.stack : String(error),
       };
+
+      // Enhanced Error Observability:
+      // If the error carries diagnostics (DiagnosticsError), unwrap them and attach to context.
+      // This ensures we don't lose the "last gasps" of the failing service.
+      if (
+        error instanceof Error &&
+        error.name === 'DiagnosticsError' &&
+        'diagnostics' in error
+      ) {
+        if (initialContext.customContext) {
+          // Merge whatever we have. It might be partial FetchDiagnostics or MediaInfoDiagnostics.
+          // We can try to guess based on structure or just dump it.
+          // For now, let's assume if it has 'headRequestDurationMs', it's fetch.
+          const diag = (error as { diagnostics: unknown }).diagnostics;
+          if (
+            typeof diag === 'object' &&
+            diag !== null &&
+            'headRequestDurationMs' in diag
+          ) {
+            initialContext.customContext.fetch = diag as FetchDiagnostics;
+          } else if (
+            typeof diag === 'object' &&
+            diag !== null &&
+            'wasmLoadTimeMs' in diag
+          ) {
+            initialContext.customContext.analysis =
+              diag as MediaInfoDiagnostics;
+          }
+        }
+      }
 
       mediaPeekEmitter.emit('error', {
         error,
